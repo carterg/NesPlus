@@ -1,0 +1,6 @@
+﻿  DebugVerifier.cpp
+  NesPlus.cpp
+  Generating code
+  All 133 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  NesPlus.vcxproj -> c:\Users\admin\documents\visual studio 2015\Projects\NesPlus\Release\NesPlus.exe

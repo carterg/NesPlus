@@ -2,7 +2,8 @@
 
 CPU::CPU(): debug(true), verifyDebug(true), printDebugTrace(true), a(0), x(0), y(0), p(0), sp(0), pc(0), instructionCount(0){
 	foundBadInstruction = false;
-	verifyAgainstLog = true;
+	verifyAgainstLog = false;
+	testSuccess = false;
 	pc = 0xC000;
 	sp = 0xFD;
 	p = 0x24;
@@ -12,10 +13,16 @@ CPU::CPU(): debug(true), verifyDebug(true), printDebugTrace(true), a(0), x(0), y
 	for (int i = 0; i < 0xFFFF; i++) {
 		mem[i] = 0;
 	}
+	ppu = new PPU();
 }
 
 CPU::~CPU() {
 	delete[] mem;
+}
+
+void CPU::stop() {
+	isRunning = false;
+	testSuccess = true;
 }
 
 /*
@@ -25,7 +32,8 @@ void CPU::setProgramRom(unsigned char* programRom, int size) {
 	memcpy(mem + 0xc000,programRom, size);
 }
 void CPU::start() {
-	while (!foundBadInstruction) {
+	isRunning = true;
+	while (!foundBadInstruction && isRunning) {
 		executeCycle();
 	}
 }
@@ -33,7 +41,11 @@ void CPU::start() {
 void CPU::executeCycle() {
 	pageBoundaryCrossed = false;
 	unsigned char op = mem[pc];
+
 	if (verifyAgainstLog) {
+		if (debugVerifier->isAtEnd(instructionCount)) {
+			stop();
+		}
 		if (!debugVerifier->verifyLine(pc, op, instructionCount, a, x, y, p, sp, (( cycle * 3) % 341))) {
 			foundBadInstruction = true;
 			dumpMemoryToFile();
@@ -1057,7 +1069,7 @@ unsigned short CPU::getIndirectY() {
 }
 
 void CPU::jump(short address) {
-	pc = address;
+	updatePC(address);
 }
 
 void CPU::adc(unsigned char val, int length) {
@@ -1070,35 +1082,36 @@ void CPU::adc(unsigned char val, int length) {
 		setOverflow(false);
 	}
 	setCarry((a + val + (isCarrySet() ? 1 : 0) > 255) ? 1 : 0);
-	a = t & 0xFF;
+	updateA(t & 0xFF);
 	setNegative(a);
 	setZero(t);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::and(unsigned char val, int length) {
-	a = a & val;
+	updateA(a & val);
 	setZero(a);
 	setSign(a);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::asl(unsigned short address, int length) {
 	unsigned char memVal = mem[address];
 	setCarry(((memVal & 0x80) > 0) ? true : false);
 	memVal = memVal << 1;
-	mem[address] = memVal;
+	//mem[address] = memVal;
+	setMemoryValue(address, memVal);
 	setNegative(memVal);
 	setZero(memVal);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::asl_a() {
 	setCarry(((a & 0x80) > 0) ? true : false);
-	a = a << 1;
+	updateA(a << 1);
 	setNegative(a);
 	setZero(a);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::bcc() {
@@ -1111,7 +1124,7 @@ void CPU::bcc() {
 		branch(addr);
 	}
 	else {
-		pc += 2;
+		updatePC(pc + 2);
 	}
 }
 
@@ -1125,7 +1138,7 @@ void CPU::bcs() {
 		branch(addr);
 	}
 	else {
-		pc += 2;
+		updatePC(pc + 2);
 	}
 }
 
@@ -1140,7 +1153,7 @@ void CPU::beq() {
 		branch(addr);
 	}
 	else {
-		pc += 2;
+		updatePC(pc + 2);
 	}
 }
 
@@ -1154,7 +1167,7 @@ void CPU::bmi() {
 		branch(addr);
 	}
 	else {
-		pc += 2;
+		updatePC(pc + 2);
 	}
 }
 void CPU::bpl() {
@@ -1167,7 +1180,7 @@ void CPU::bpl() {
 		branch(addr);
 	}
 	else {
-		pc += 2;
+		updatePC(pc + 2);
 	}
 }
 
@@ -1181,7 +1194,7 @@ void CPU::bvc() {
 		branch(addr);
 	}
 	else {
-		pc += 2;
+		updatePC(pc + 2);
 	}
 }
 
@@ -1195,7 +1208,7 @@ void CPU::bvs() {
 		branch(addr);
 	}
 	else {
-		pc += 2;
+		updatePC(pc + 2);
 	}
 }
 
@@ -1205,7 +1218,7 @@ void CPU::bit(unsigned char val, int length) {
 	setSign(val);
 	setOverflow(val);
 
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::bne() {
@@ -1218,27 +1231,27 @@ void CPU::bne() {
 		branch(addr);
 	}
 	else {
-		pc += 2;
+		updatePC(pc + 2);
 	}
 }
 
 void CPU::branch(unsigned short relative) {
-	pc = pc + relative + 2;
+	updatePC(pc + relative + 2);
 }
 
 void CPU::clc() {
 	p = p & 0b11111110;
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::cld() {
 	p = p & 0b11110111;
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::clv() {
 	p = p & 0b10111111;
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::compare(unsigned char reg, unsigned char val, int length) {
@@ -1247,19 +1260,20 @@ void CPU::compare(unsigned char reg, unsigned char val, int length) {
 	setZero(t);
 	setSign(t);
 
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::dcp(unsigned short address, int length) {
 	unsigned char val = mem[address];
 	val--;
-	mem[address] = val;
+	//mem[address] = val;
+	setMemoryValue(address, val);
 
 	unsigned char t = a - val;
 	setZero(t);
 	setSign(t);
 
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::dec(unsigned short address, int length) {
@@ -1267,28 +1281,29 @@ void CPU::dec(unsigned short address, int length) {
 	val = val - 1;
 	setSign(val);
 	setZero(val);
-	mem[address] = val;
-	pc += length;
+	//mem[address] = val;
+	setMemoryValue(address, val);
+	updatePC(pc + length);
 }
 void CPU::dex() {
-	x -= 1;
+	updateX(x - 1);
 	setZero(x);
 	setNegative(x);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::dey() {
-	y -= 1;
+	updateY(y - 1);
 	setZero(y);
 	setNegative(y);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::eor(unsigned char val, int length) {
-	a = a ^ val;
+	updateA(a ^ val);
 	setNegative(a);
 	setZero(a);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::inc(unsigned short address, int length) {
@@ -1296,123 +1311,125 @@ void CPU::inc(unsigned short address, int length) {
 	val++;
 	setSign(val);
 	setZero(val);
-	mem[address] = val;
-	pc += length;
+	//mem[address] = val;
+	setMemoryValue(address, val);
+	updatePC(pc + length);
 }
 
 void CPU::iny() {
-	y += 1;
+	updateY(y + 1);
 	setZero(y);
 	setNegative(y);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::inx() {
-	x += 1;
+	updateX(x + 1);
 	setZero(x);
 	setNegative(x);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::isc(unsigned short address, int length) {
 	unsigned char val = mem[address];
 	val++;
-	mem[address] = val;
+	//mem[address] = val;
+	setMemoryValue(address, val);
 	adc(~val, 0);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::jsr(unsigned short address) {
 	pushOnStack((unsigned short)(pc + 2));
-	pc = address;
-
+	updatePC(address);
 }
 
 void CPU::lax(unsigned char val, int length) {
-	a = val;
-	x = val;
+	updateA(val);
+	updateX(val);
 	setSign(val);
 	setZero(val);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::lda(unsigned char val, int length) {
-	a = val;
-	pc += length;
+	updateA(val);
+	updatePC(pc + length);
 	setSign(val);
 	setZero(val);
 }
 
 void CPU::ldx(unsigned char val, int length) {
-	x = val;
-	pc += length;
+	updateX(val);
+	updatePC(pc + length);
 	setSign(val);
 	setZero(val);
 }
 
 void CPU::ldy(unsigned char val, int length) {
-	y = val;
-	pc += length;
+	updateY(val);
+	updatePC(pc + length);
 	setSign(val);
 	setZero(val);
 }
 
 void CPU::lsr_a() {
 	setCarry(((a & 0x01) == 1) ? true : false);
-	a = a >> 1;
+	updateA(a >> 1);
 	setNegative(0);
 	setZero(a);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::lsr(unsigned short memoryAddress, int size) {
 	unsigned char val = mem[memoryAddress];
 	setCarry(((val & 0x01) == 1) ? true : false);
 	val = val >> 1;
-	mem[memoryAddress] = val;
+	//mem[memoryAddress] = val;
+	setMemoryValue(memoryAddress, val);
 	setNegative(val);
 	setZero(val);
-	pc += size;
+	updatePC(pc + size);
 }
 
 void CPU::nop(int length) {
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::ora(unsigned char val, int length) {
-	a = a | val;
+	updateA(a | val);
 	setNegative(a);
 	setZero(a);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::pha() {
 	pushOnStack(a);
-	pc += 1;
+	updatePC(pc + 1);
 }
 void CPU::php() {
 	unsigned char val = p | 0b00010000;
 	pushOnStack(val);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::pla() {
-	a = pullOffStackChar();
+	updateA(pullOffStackChar());
 	setSign(a);
 	setZero(a);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::plp() {
 	p = (unsigned char)(pullOffStackChar() & 0b11101111);
 	p = p | 0b00100000; // bit 5 alway set to 1
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::rla(unsigned short address, int length) {
 	rol(address, 0);
 	and (mem[address], 0);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::rol(unsigned short address, int length) {
@@ -1425,20 +1442,21 @@ void CPU::rol(unsigned short address, int length) {
 	setCarry(bit7Set);
 	setZero(val);
 	setSign(val);
-	mem[address] = val;
-	pc += length;
+	//mem[address] = val;
+	setMemoryValue(address, val);
+	updatePC(pc + length);
 }
 
 void CPU::rol_a() {
 	bool bit7Set = ((a & 0x80) == 0x80) ? true : false;
-	a = a << 1;
+	updateA(a << 1);
 	if (isCarrySet()) {
-		a = a | 0x01;
+		updateA(a | 0x01);
 	}
 	setCarry(bit7Set);
 	setZero(a);
 	setSign(a);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::ror(unsigned short address, int length) {
@@ -1448,135 +1466,138 @@ void CPU::ror(unsigned short address, int length) {
 	if (isCarrySet()) {
 		val = val | 0x80;
 	}
-	mem[address] = val;
+	//mem[address] = val;
+	setMemoryValue(address, val);
 	setCarry(bit0Set);
 	setZero(val);
 	setSign(val);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::ror_a() {
 	bool bit0Set = ((a & 0x01) == 1) ? true : false;
-	a = a >> 1;
+	updateA(a >> 1);
 	if (isCarrySet()) {
-		a = a | 0x80;
+		updateA(a | 0x80);
 	}
 	setCarry(bit0Set);
 	setZero(a);
 	setSign(a);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::rra(unsigned short address, int length) {
 	ror(address, 0);
 	adc(mem[address], 0);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::rti() {
 	p = pullOffStackChar();
 	p = p | 0b00100000;  // bit 5 always set to 1
-	pc = pullOffStackShort();
+	updatePC(pullOffStackShort());
+
 }
 
 void CPU::rts() {
-	pc = pullOffStackShort() + 1;
+	updatePC(pullOffStackShort() + 1);
 }
 
 void CPU::sax(unsigned short address, int length) {
 	unsigned char val = a & x;
-	mem[address] = val;
-	pc += length;
+	//mem[address] = val;
+	setMemoryValue(address, val);
+	updatePC(pc + length);
 }
 
 void CPU::sec() {
 	p = p | 0b00000001;
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::sed() {
 	p = p | 0b00001000;
-	pc += 1;
+	updatePC(pc + 1);
 }
 void CPU::sei() {
 	p = p | 0b00000100;
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::slo(unsigned short address, int length) {
 	unsigned char val = mem[address];
 	setCarry(((val & 0x80) > 0) ? true : false);
-	mem[address] = val << 1;
+	setMemoryValue(address, val << 1);
 
-	a = a | mem[address];
+	updateA(a | mem[address]);
 	setSign(a);
 	setZero(a);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::sre(unsigned short address, int length) {
 	lsr(address, 0);
 	eor(mem[address], 0);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::store(unsigned short address, unsigned char val) {
-	mem[address] = val;
+	setMemoryValue(address, val);
 }
 
 void CPU::sta(unsigned short address, int length) {
 	store(address, a);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::stx(unsigned short val, int length) {
 	store(val, x);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::sty(unsigned short val, int length) {
 	store(val, y);
-	pc += length;
+	updatePC(pc + length);
 }
 
 void CPU::tax() {
-	x = a;
+	updateX(a);
 	setNegative(x);
 	setZero(x);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::tay() {
-	y = a;
+	updateY(a);
 	setNegative(y);
 	setZero(y);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::tsx() {
-	x = sp;
+	updateX(sp);
 	setNegative(x);
 	setZero(x);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::txa() {
-	a = x;
+	updateA(x);
 	setNegative(a);
 	setZero(a);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::txs() {
 	sp = x;
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 void CPU::tya() {
-	a = y;
+	updateA(y);
 	setNegative(a);
 	setZero(a);
-	pc += 1;
+	updatePC(pc + 1);
 }
 
 unsigned short CPU::pullOffStackShort() {
@@ -1675,6 +1696,61 @@ bool CPU::isZeroSet() {
 	return (p & 0b00000010) == 2;
 }
 
+void CPU::setMemoryValue(unsigned short address, unsigned char val) {
+	mem[address] = val;
+
+	if (address == 0x2000) {
+		ppu->setPPUCTRL(val);
+	}
+	else if (address == 0x2001) {
+		ppu->setPPUMASK(val);
+	}
+	else if (address == 0x2002) {
+		ppu->setPPUSTATUS(val);
+	}
+	else if (address == 0x2003) {
+		ppu->setOAMADDR(val);
+	}
+	else if (address == 0x2004) {
+		ppu->setOAMDATA(val);
+	}
+	else if (address == 0x2005) {
+		ppu->setPPUSCROLL(val);
+	}
+	else if (address == 0x2006) {
+		ppu->setPPUADDR(val);
+	}
+	else if (address == 0x2007) {
+		ppu->setPPUDATA(val);
+	}
+	else if (address == 0x4014) {
+		ppu->setOAMDMA(val);
+	}
+}
+
+void CPU::setDbgWin(DbgWin* dbgWin) {
+	this->dbgWin = dbgWin;
+}
+
+void CPU::updateA(unsigned char val) {
+	this->a = val;
+	if (dbgWin) dbgWin->updateARegister(val);
+}
+
+void CPU::updateX(unsigned char val) {
+	this->x = val;
+	if (dbgWin) dbgWin->updateXRegister(val);
+}
+
+void CPU::updateY(unsigned char val) {
+	this->y = val;
+	if (dbgWin) dbgWin->updateYRegister(val);
+}
+
+void CPU::updatePC(unsigned short val) {
+	this->pc = val;
+	if (dbgWin) dbgWin->updatePC(val);
+}
 
 void CPU::dumpMemoryToFile() {
 	std::cout << "Dumping contents of CPU memory to file..." << std::endl;

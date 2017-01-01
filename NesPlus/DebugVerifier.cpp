@@ -48,6 +48,12 @@ bool DebugVerifier::checkInstruction(std::string output, int instructionCount) {
 	return false;
 }
 
+bool DebugVerifier::isAtEnd(int line) {
+	if (line == lines->size()-1)
+		return true;
+	return false;
+}
+
 bool DebugVerifier::verifyLine(unsigned short pc, unsigned char opcode, int line, unsigned char a, unsigned char x, unsigned char y, unsigned char p, unsigned char sp, unsigned short cyc) {
 	DebugVerifierLineItem *lineItem = lines->at(line);
 	if (pc != lineItem->getPC()) {

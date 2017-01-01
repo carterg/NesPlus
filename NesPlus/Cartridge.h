@@ -10,6 +10,7 @@ private:
 	unsigned char *prgROM;
 	unsigned char *chrROM;
 	int prgROMSize;
+	std::string romName;
 public:
 	Cartridge(std::string romName);
 	~Cartridge();

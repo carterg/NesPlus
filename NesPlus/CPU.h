@@ -3,6 +3,8 @@
 #include <iostream>
 #include <fstream>
 #include "DebugVerifier.h"
+#include "PPU.h"
+#include "DbgWin.h"
 
 class CPU {
 private:
@@ -20,7 +22,9 @@ private:
 
 	unsigned char* mem;
 
+	PPU *ppu;
 
+	bool isRunning;
 	/* state variables */
 	bool pageBoundaryCrossed;
 
@@ -30,12 +34,16 @@ private:
 	std::string debugLine;
 	DebugVerifier *debugVerifier;
 	int instructionCount;
+	bool testSuccess;
+	DbgWin* dbgWin;
+
 public:
 	CPU();
 	~CPU();
 	void setProgramRom(unsigned char* prgRom, int size);
 	void start();
 	void executeCycle();
+	void stop();
 
 	void adc(unsigned char val, int length);
 	void and(unsigned char val, int length);
@@ -134,10 +142,20 @@ public:
 	unsigned short getIndirectX();
 	unsigned short getIndirectY();
 
+	void updateA(unsigned char val);
+	void updateX(unsigned char val);
+	void updateY(unsigned char val);
+	void updatePC(unsigned short val);
+
+
+	void setMemoryValue(unsigned short address, unsigned char val);
+
 	/** Debug Methods **/
-	void setDebugVerifier(DebugVerifier *dv) { this->debugVerifier = dv; }
+	void setDebugVerifier(DebugVerifier *dv) { this->debugVerifier = dv; this->verifyAgainstLog = true; }
 	void dumpMemoryToFile();
 	void printStack();
+	bool getTestSuccess() { return this->testSuccess; }
+	void setDbgWin(DbgWin* dbgWin);
 
 
 };

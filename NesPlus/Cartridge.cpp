@@ -3,9 +3,12 @@
 #include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
+#include<Windows.h>
+#include "EasyLogging++.h"
 
 Cartridge::Cartridge(std::string romName) {
-	std::cout << "Loading rom " << romName << std::endl;
+	this->romName = romName;
+	LOG(INFO) << "Loading Rom " << romName;
 	loadRom(romName);
 }
 
@@ -19,22 +22,24 @@ bool Cartridge::loadRom(std::string romPath) {
 	FILE *file = NULL;
 
 	if((file = fopen(romPath.c_str(), "rb")) == NULL) {
-		std::cerr << "Could not open file: " << romPath << std::endl;
+		OutputDebugString(L"Could not open file\n ");
 		return false;
 	}
 	
 	unsigned char header[16];
 	fread(header, 16, 1, file);
 	if (!verifyHeader(header)) {
-		std::cerr << "Header invalid" << std::endl;
+		OutputDebugString(L"Header was invalid\n ");
 	}
 	else {
-		std::cout << "Header was valid." << std::endl;
+		OutputDebugString(L"Header was valid\n ");
 	}
 	
 	int sizeOfPRGROM = header[4];
 	prgROMSize = sizeOfPRGROM * 16 * 1024;
 	prgROM = new unsigned char[prgROMSize];
+	
+	OutputDebugString(L"created prgROM\n ");
 
 	int sizeOfCHRROM = header[5];
 	chrROM = new unsigned char[sizeOfCHRROM * 8 * 1024];
